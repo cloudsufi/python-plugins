@@ -16,6 +16,7 @@
 
 package io.cdap.plugin.python.transform;
 
+import com.google.common.base.Strings;
 import io.cdap.cdap.api.annotation.Description;
 import io.cdap.cdap.api.annotation.Macro;
 import io.cdap.cdap.api.annotation.Name;
@@ -77,6 +78,7 @@ public class PythonEvaluator extends Transform<StructuredRecord, StructuredRecor
   public static class Config extends PluginConfig {
     private static final String SCRIPT = "script";
     private static final String SCHEMA = "schema";
+    private static final String EXECUTION_MODE = "executionMode";
 
     @Description("Python code defining how to transform one record into another. The script must implement a " +
       "function called 'transform', which takes as input a dictionary representing the input record, an emitter " +
@@ -93,6 +95,7 @@ public class PythonEvaluator extends Transform<StructuredRecord, StructuredRecor
       "    context.getLogger().debug(\"Received record with negative count\")\n" +
       "  emitter.emit(record)'\n" +
       "will scale the 'count' field by 1024.")
+    @Macro
     private final String script;
 
     @Description("The schema of the output object. If no schema is given, it is assumed that the output schema is " +
@@ -227,9 +230,17 @@ public class PythonEvaluator extends Transform<StructuredRecord, StructuredRecor
     } else {
       stageConfigurer.setOutputSchema(stageConfigurer.getInputSchema());
     }
+
+    // check if execution mode is specified
+    if (!config.containsMacro(Config.EXECUTION_MODE) && Strings.isNullOrEmpty(config.executionMode)) {
+      collector.addFailure("Execution mode must be specified", null).withConfigProperty(Config.EXECUTION_MODE);
+      return;
+    }
+
     // try evaluating the script to fail application creation
     // if the script is invalid (only possible for interpreted mode)
-    if (config.executionMode.equalsIgnoreCase(EXECUTION_MODE_INTERPRETED)) {
+    if (!config.containsMacro(Config.EXECUTION_MODE) && !config.containsMacro(Config.SCRIPT) &&
+        config.executionMode.equalsIgnoreCase(EXECUTION_MODE_INTERPRETED)) {
       try {
         new JythonPythonExecutor(config).initialize(null);
       } catch (IOException | InterruptedException e) {
